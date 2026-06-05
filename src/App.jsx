@@ -1,0 +1,50 @@
+import { Navigate, Route, Routes } from "react-router-dom";
+import { FinanceProvider } from "./lib/financeContext";
+import { useFinance } from "./lib/financeContext";
+import Layout from "./components/Layout";
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import CommandCenter from "./pages/CommandCenter";
+import TaxInvestments from "./pages/TaxInvestments";
+import PortfolioImpact from "./pages/PortfolioImpact";
+import PortfolioCreator from "./pages/PortfolioCreator";
+import PlanningEngine from "./pages/PlanningEngine";
+import WhatIfSimulator from "./pages/WhatIfSimulator";
+import AIFinancialAdvisor from "./pages/AIFinancialAdvisor";
+import UserSettings from "./pages/UserSettings";
+
+function ProtectedLayout() {
+  const { authUser } = useFinance();
+
+  if (!authUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/dashboard" element={<CommandCenter />} />
+        <Route path="/investments" element={<TaxInvestments />} />
+        <Route path="/portfolio" element={<PortfolioImpact />} />
+        <Route path="/portfolio-creator" element={<PortfolioCreator />} />
+        <Route path="/planning-engine" element={<PlanningEngine />} />
+        <Route path="/simulator" element={<WhatIfSimulator />} />
+        <Route path="/advisor" element={<AIFinancialAdvisor />} />
+        <Route path="/settings" element={<UserSettings />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Layout>
+  );
+}
+
+export default function App() {
+  return (
+    <FinanceProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/*" element={<ProtectedLayout />} />
+      </Routes>
+    </FinanceProvider>
+  );
+}

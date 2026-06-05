@@ -1,0 +1,42 @@
+{
+  "type": "ridge-regression",
+  "coefficients": [
+    -0.00319669941605106,
+    0.005725102826336235,
+    -0.007963909971512487,
+    0.005511274575858672,
+    -0.0022553820666926117
+  ],
+  "means": [
+    -0.0013379321977522434,
+    -0.00583078462225103,
+    0.018777660869048467,
+    -0.0521752972223634
+  ],
+  "stds": [
+    0.03978785263299694,
+    0.07024934775977132,
+    0.011975937982557291,
+    0.3593713932225243
+  ],
+  "featureCount": 4,
+  "metrics": {
+    "r2": 0.01535940007827774,
+    "mae": 0.05701188490015967,
+    "samples": 373
+  },
+  "modelName": "market-return-ridge",
+  "modelVersion": "2026-06-05",
+  "target": "next_21_trading_day_return",
+  "featureNames": [
+    "return_7d",
+    "return_21d",
+    "intraday_range",
+    "volume_ratio_log"
+  ],
+  "testMetrics": {
+    "mae": 0.05500107760359431,
+    "samples": 82
+  },
+  "source": "https://raw.githubusercontent.com/plotly/datasets/master/finance-charts-apple.csv"
+}

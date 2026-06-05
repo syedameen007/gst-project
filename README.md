@@ -1,0 +1,51 @@
+# Fiscal Lens
+
+React + JavaScript full-stack finance project for tax-aware investments, GST ITC planning, portfolio tax impact, what-if simulation, and AI support chat.
+
+## Features
+
+- Separate React pages for all five requested features.
+- Proper home hub at `/` with access to every feature.
+- Customer login page at `/login`.
+- User information and settings page at `/settings`.
+- Portfolio creator at `/portfolio-creator` with editable assets, tax buckets, risk mix, and MongoDB save/load.
+- Responsive web and phone support with mobile bottom navigation.
+- MongoDB persistence for user financial profile, scenarios, ML predictions, and chat messages.
+- MongoDB persistence for users and created portfolios.
+- Node/Express API with Mongoose models.
+- JavaScript ML training pipeline using ridge regression on online CSV/Kaggle-style OHLCV data.
+- Floating AI customer-support chatbot on every page.
+
+## Run Locally
+
+```bash
+cp .env.example .env
+docker compose up -d
+npm install
+npm run ml:train
+npm run dev
+```
+
+Frontend: http://127.0.0.1:5173  
+API: http://127.0.0.1:4000/api/health
+
+## Kaggle Training
+
+Kaggle dataset pages require a Kaggle account/API token to download files programmatically. Download any NIFTY 50 OHLCV CSV from Kaggle, then train with:
+
+```bash
+$env:TRAINING_CSV_PATH="C:\path\to\nifty50.csv"
+npm run ml:train
+```
+
+The trainer expects columns like `Date`, `Open`, `High`, `Low`, `Close`, and `Volume`. It saves the trained model artifact at:
+
+```text
+server/ml/trainedModel.json
+```
+
+Without a Kaggle CSV, `npm run ml:train` uses a public online OHLCV CSV so the ML path works immediately. Replace it with a NIFTY dataset for a stronger India-specific model.
+
+## Accuracy Note
+
+Income-tax and GST savings are deterministic calculations based on encoded tax rules. Portfolio growth is probabilistic; accuracy improves only when the ML model is trained and validated on relevant historical NIFTY/portfolio data.
