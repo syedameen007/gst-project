@@ -9,6 +9,7 @@ import {
   PiggyBank,
   Settings,
   SquarePen,
+  TrendingUp,
   UploadCloud,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -28,6 +29,12 @@ const tiles = [
     title: "Portfolio Creator",
     body: "Build tax-aware assets and save allocations to MongoDB.",
     icon: SquarePen,
+  },
+  {
+    to: "/stocks",
+    title: "Stock Analysis",
+    body: "Add stocks directly for ML prediction and capital-gains review.",
+    icon: TrendingUp,
   },
   {
     to: "/tax-filing-helper",
@@ -84,6 +91,7 @@ export default function Home() {
           <nav aria-label="Home navigation">
             <Link to="/dashboard">Dashboard</Link>
             <Link to="/portfolio-creator">Portfolio</Link>
+            <Link to="/stocks">Stocks</Link>
             <Link to="/planning-engine">Engine</Link>
             <Link to="/simulator">Simulator</Link>
             <Link to="/advisor">Advisor</Link>

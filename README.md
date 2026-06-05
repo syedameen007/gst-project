@@ -11,6 +11,7 @@ React + JavaScript full-stack finance project for tax-aware investments, GST ITC
 - Google OAuth login scaffold with backend callback at `/api/auth/google/callback`.
 - User information and settings page at `/settings`.
 - Portfolio creator at `/portfolio-creator` with editable assets, tax buckets, risk mix, and MongoDB save/load.
+- Stock prediction and analysis at `/stocks` with direct stock entry, MongoDB storage, ML-assisted projection, and capital-gains tax notes.
 - Tax filing helper at `/tax-filing-helper` for document uploads, expense writing, and guided beginner tax questions.
 - Responsive web and phone support with mobile bottom navigation.
 - MongoDB persistence for user financial profile, scenarios, ML predictions, and chat messages.
@@ -81,3 +82,7 @@ Users can:
 - upload Form 16, GST invoices, investment proofs, bank statements, rent/home-loan documents, and expense bills
 - enter business expenses with GST amount and tax treatment
 - answer guided questions that generate a filing checklist for beginners
+
+## Stock Analysis
+
+The stock analysis page lets users add holdings directly with symbol, quantity, buy/current price, recent return signals, volatility, volume ratio, holding period, and tax class. Each saved holding is stored in MongoDB and returned with ML-assisted price projection plus a tax-aware short-term/long-term capital-gains note.

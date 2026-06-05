@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   SquarePen,
+  TrendingUp,
   UploadCloud,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -22,6 +23,7 @@ const nav = [
   { to: "/investments", label: "Tax Investments", icon: PiggyBank },
   { to: "/portfolio", label: "Portfolio Impact", icon: PieChart },
   { to: "/portfolio-creator", label: "Portfolio Creator", icon: SquarePen },
+  { to: "/stocks", label: "Stock Analysis", icon: TrendingUp },
   { to: "/tax-filing-helper", label: "Filing Helper", icon: UploadCloud },
   { to: "/planning-engine", label: "Planning Engine", icon: BrainCircuit },
   { to: "/simulator", label: "Simulator", icon: SlidersHorizontal },

@@ -158,6 +158,21 @@ export function deleteExpense(userId, expenseId) {
   return request(`/api/expenses/${userId}/${expenseId}`, { method: "DELETE" });
 }
 
+export function fetchStocks(userId) {
+  return request(`/api/stocks/${userId}`);
+}
+
+export function addStock(userId, stock) {
+  return request(`/api/stocks/${userId}`, {
+    method: "POST",
+    body: JSON.stringify(stock),
+  });
+}
+
+export function deleteStock(userId, stockId) {
+  return request(`/api/stocks/${userId}/${stockId}`, { method: "DELETE" });
+}
+
 export function fetchTaxGuide(userId) {
   return request(`/api/tax-guide/${userId}`);
 }

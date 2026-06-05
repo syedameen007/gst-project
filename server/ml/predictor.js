@@ -48,3 +48,33 @@ export function predictFinancialOutcome(model) {
     metrics: artifact.testMetrics,
   };
 }
+
+export function predictStockOutcome(stock) {
+  const artifact = loadArtifact();
+  const return7 = Math.min(Math.max(Number(stock.return7d || 0) / 100, -0.3), 0.3);
+  const return21 = Math.min(Math.max(Number(stock.return21d || 0) / 100, -0.45), 0.45);
+  const range = Math.min(Math.max(Number(stock.volatilityRange || 0) / 100, 0.001), 0.2);
+  const volumeRatioLog = Math.log(Math.max(Number(stock.volumeRatio || 1), 0.1));
+
+  if (!artifact) {
+    const fallbackReturn = return21 * 0.35 + return7 * 0.25 - range * 0.15;
+    return {
+      monthlyReturn: fallbackReturn,
+      confidence: 0.52,
+      source: "fallback-stock-heuristic",
+      modelName: "fallback-stock-heuristic",
+      modelVersion: "0.1",
+      metrics: null,
+    };
+  }
+
+  const monthlyReturn = predictRidge(artifact, [return7, return21, range, volumeRatioLog]);
+  return {
+    monthlyReturn,
+    confidence: Math.max(0.42, Math.min(0.86, 1 - (artifact.testMetrics?.mae || 0.16))),
+    source: artifact.source,
+    modelName: `${artifact.modelName}-stock`,
+    modelVersion: artifact.modelVersion,
+    metrics: artifact.testMetrics,
+  };
+}

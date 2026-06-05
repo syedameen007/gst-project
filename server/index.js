@@ -13,12 +13,13 @@ import FinancialProfile from "./models/FinancialProfile.js";
 import Portfolio from "./models/Portfolio.js";
 import Prediction from "./models/Prediction.js";
 import Scenario from "./models/Scenario.js";
+import StockHolding from "./models/StockHolding.js";
 import TaxDocument from "./models/TaxDocument.js";
 import TaxGuideSession from "./models/TaxGuideSession.js";
 import User from "./models/User.js";
 import { advisorReply } from "./lib/advisor.js";
 import { buildModel, DEFAULT_INPUTS } from "./lib/taxEngine.js";
-import { predictFinancialOutcome } from "./ml/predictor.js";
+import { predictFinancialOutcome, predictStockOutcome } from "./ml/predictor.js";
 
 dotenv.config();
 
@@ -133,6 +134,37 @@ function portfolioSummary(assets) {
       : 0;
 
   return { totalValue, taxSavingAssets, weightedReturn, highRiskShare };
+}
+
+function analyzeStock(stock) {
+  const prediction = predictStockOutcome(stock);
+  const investedValue = Number(stock.quantity || 0) * Number(stock.averagePrice || 0);
+  const marketValue = Number(stock.quantity || 0) * Number(stock.currentPrice || 0);
+  const gainLoss = marketValue - investedValue;
+  const gainLossPct = investedValue > 0 ? gainLoss / investedValue : 0;
+  const predictedPrice = Number(stock.currentPrice || 0) * (1 + prediction.monthlyReturn);
+  const projectedValue = Number(stock.quantity || 0) * predictedPrice;
+  const holdingPeriod = Number(stock.holdingPeriodMonths || 0);
+  const taxNote =
+    stock.taxClass === "Equity"
+      ? holdingPeriod >= 12
+        ? "Likely long-term equity holding; review LTCG exemption/rate before selling."
+        : "Likely short-term equity holding; review STCG impact before selling."
+      : "Review asset-specific capital gains rules before selling.";
+
+  return {
+    investedValue,
+    marketValue,
+    gainLoss,
+    gainLossPct,
+    predictedMonthlyReturn: prediction.monthlyReturn,
+    predictedPrice,
+    projectedValue,
+    confidence: prediction.confidence,
+    modelName: prediction.modelName,
+    modelVersion: prediction.modelVersion,
+    taxNote,
+  };
 }
 
 const taxQuestions = [
@@ -678,6 +710,63 @@ app.delete("/api/tax-guide/:userId", async (req, res, next) => {
   try {
     if (!ensureOwnUser(req, res)) return;
     await TaxGuideSession.deleteOne({ userId: req.params.userId });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/stocks/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const stocks = await StockHolding.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    res.json(stocks.map((stock) => ({ ...stock.toObject(), analysis: analyzeStock(stock) })));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/stocks/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const symbol = String(req.body.symbol || "").trim().toUpperCase();
+    const quantity = Math.max(0, Number(req.body.quantity) || 0);
+    const averagePrice = Math.max(0, Number(req.body.averagePrice) || 0);
+    const currentPrice = Math.max(0, Number(req.body.currentPrice) || 0);
+    const validTaxClasses = new Set(["Equity", "Debt fund", "International", "Other"]);
+
+    if (!symbol || quantity <= 0 || averagePrice <= 0 || currentPrice <= 0) {
+      return res.status(400).json({
+        error: "Symbol, quantity, average price, and current price are required",
+      });
+    }
+
+    const stock = await StockHolding.create({
+      userId: req.params.userId,
+      symbol,
+      companyName: String(req.body.companyName || ""),
+      sector: String(req.body.sector || "General"),
+      quantity,
+      averagePrice,
+      currentPrice,
+      return7d: Number(req.body.return7d) || 0,
+      return21d: Number(req.body.return21d) || 0,
+      volatilityRange: Math.max(0, Number(req.body.volatilityRange) || 0),
+      volumeRatio: Math.max(0.1, Number(req.body.volumeRatio) || 1),
+      holdingPeriodMonths: Math.max(0, Number(req.body.holdingPeriodMonths) || 0),
+      taxClass: validTaxClasses.has(req.body.taxClass) ? req.body.taxClass : "Equity",
+      notes: String(req.body.notes || ""),
+    });
+    res.status(201).json({ ...stock.toObject(), analysis: analyzeStock(stock) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/stocks/:userId/:stockId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    await StockHolding.deleteOne({ _id: req.params.stockId, userId: req.params.userId });
     res.json({ ok: true });
   } catch (error) {
     next(error);
