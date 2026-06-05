@@ -12,6 +12,7 @@ import PlanningEngine from "./pages/PlanningEngine";
 import WhatIfSimulator from "./pages/WhatIfSimulator";
 import AIFinancialAdvisor from "./pages/AIFinancialAdvisor";
 import UserSettings from "./pages/UserSettings";
+import TaxFilingHelper from "./pages/TaxFilingHelper";
 
 function ProtectedLayout() {
   const { authUser } = useFinance();
@@ -28,6 +29,7 @@ function ProtectedLayout() {
         <Route path="/investments" element={<TaxInvestments />} />
         <Route path="/portfolio" element={<PortfolioImpact />} />
         <Route path="/portfolio-creator" element={<PortfolioCreator />} />
+        <Route path="/tax-filing-helper" element={<TaxFilingHelper />} />
         <Route path="/planning-engine" element={<PlanningEngine />} />
         <Route path="/simulator" element={<WhatIfSimulator />} />
         <Route path="/advisor" element={<AIFinancialAdvisor />} />

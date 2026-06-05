@@ -48,6 +48,21 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+async function uploadRequest(path, formData) {
+  const token = localStorage.getItem(USER_TOKEN_KEY);
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(`API ${response.status}: ${await response.text()}`);
+  }
+  return response.json();
+}
+
 export function fetchProfile(userId) {
   return request(`/api/profile/${userId}`);
 }
@@ -103,4 +118,46 @@ export function savePortfolio(userId, portfolio) {
     method: "PUT",
     body: JSON.stringify(portfolio),
   });
+}
+
+export function fetchDocuments(userId) {
+  return request(`/api/documents/${userId}`);
+}
+
+export function uploadDocument(userId, formData) {
+  return uploadRequest(`/api/documents/${userId}`, formData);
+}
+
+export function deleteDocument(userId, documentId) {
+  return request(`/api/documents/${userId}/${documentId}`, { method: "DELETE" });
+}
+
+export function fetchExpenses(userId) {
+  return request(`/api/expenses/${userId}`);
+}
+
+export function addExpense(userId, expense) {
+  return request(`/api/expenses/${userId}`, {
+    method: "POST",
+    body: JSON.stringify(expense),
+  });
+}
+
+export function deleteExpense(userId, expenseId) {
+  return request(`/api/expenses/${userId}/${expenseId}`, { method: "DELETE" });
+}
+
+export function fetchTaxGuide(userId) {
+  return request(`/api/tax-guide/${userId}`);
+}
+
+export function answerTaxGuide(userId, questionId, answer) {
+  return request(`/api/tax-guide/${userId}/answer`, {
+    method: "POST",
+    body: JSON.stringify({ questionId, answer }),
+  });
+}
+
+export function resetTaxGuide(userId) {
+  return request(`/api/tax-guide/${userId}`, { method: "DELETE" });
 }

@@ -9,6 +9,7 @@ import {
   PiggyBank,
   Settings,
   SquarePen,
+  UploadCloud,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import MetricCard from "../components/MetricCard";
@@ -27,6 +28,12 @@ const tiles = [
     title: "Portfolio Creator",
     body: "Build tax-aware assets and save allocations to MongoDB.",
     icon: SquarePen,
+  },
+  {
+    to: "/tax-filing-helper",
+    title: "Tax Filing Helper",
+    body: "Upload documents, write expenses, and answer guided filing questions.",
+    icon: UploadCloud,
   },
   {
     to: "/investments",

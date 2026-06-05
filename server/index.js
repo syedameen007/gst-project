@@ -2,12 +2,19 @@ import cors from "cors";
 import crypto from "node:crypto";
 import dotenv from "dotenv";
 import express from "express";
+import fs from "node:fs";
 import mongoose from "mongoose";
+import multer from "multer";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import ChatMessage from "./models/ChatMessage.js";
+import Expense from "./models/Expense.js";
 import FinancialProfile from "./models/FinancialProfile.js";
 import Portfolio from "./models/Portfolio.js";
 import Prediction from "./models/Prediction.js";
 import Scenario from "./models/Scenario.js";
+import TaxDocument from "./models/TaxDocument.js";
+import TaxGuideSession from "./models/TaxGuideSession.js";
 import User from "./models/User.js";
 import { advisorReply } from "./lib/advisor.js";
 import { buildModel, DEFAULT_INPUTS } from "./lib/taxEngine.js";
@@ -15,9 +22,27 @@ import { predictFinancialOutcome } from "./ml/predictor.js";
 
 dotenv.config();
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadRoot = path.join(__dirname, "..", "uploads");
+fs.mkdirSync(uploadRoot, { recursive: true });
+
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const mongoUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/fiscal_lens";
+const upload = multer({
+  storage: multer.diskStorage({
+    destination(req, _file, cb) {
+      const userFolder = path.join(uploadRoot, String(req.params.userId || "unknown"));
+      fs.mkdirSync(userFolder, { recursive: true });
+      cb(null, userFolder);
+    },
+    filename(_req, file, cb) {
+      const safeName = file.originalname.replace(/[^\w.\-]+/g, "_");
+      cb(null, `${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${safeName}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 app.use(
   cors({
@@ -87,6 +112,97 @@ function portfolioSummary(assets) {
       : 0;
 
   return { totalValue, taxSavingAssets, weightedReturn, highRiskShare };
+}
+
+const taxQuestions = [
+  {
+    id: "incomeSources",
+    question: "What income did you earn this year?",
+    helper: "Examples: salary, freelancing, business sales, rent, interest, capital gains.",
+    options: ["Salary only", "Business/Freelance", "Salary + business", "Not sure"],
+  },
+  {
+    id: "gstRegistered",
+    question: "Are you registered under GST?",
+    helper: "This decides whether we should ask for sales invoices, purchase invoices, and input tax credit.",
+    options: ["Yes", "No", "Not sure"],
+  },
+  {
+    id: "businessExpenses",
+    question: "Do you have business or work-related expenses?",
+    helper: "Add expenses like software, travel, internet, rent, phone, professional fees, and purchases.",
+    options: ["Yes", "No", "Some, but not organized"],
+  },
+  {
+    id: "investmentProofs",
+    question: "Did you invest in tax-saving instruments?",
+    helper: "Examples: ELSS, PPF, EPF, life insurance, NPS, tax-saving FD.",
+    options: ["Yes", "No", "Need suggestions"],
+  },
+  {
+    id: "housing",
+    question: "Do you pay rent or have a home loan?",
+    helper: "This helps decide if rent receipts, HRA, interest certificate, or principal repayment proof is needed.",
+    options: ["Rent", "Home loan", "Both", "Neither"],
+  },
+  {
+    id: "capitalGains",
+    question: "Did you sell shares, mutual funds, property, or crypto?",
+    helper: "Capital gains need transaction statements and purchase/sale details.",
+    options: ["Yes", "No", "Not sure"],
+  },
+  {
+    id: "bankInterest",
+    question: "Do you have bank interest, FD interest, or other income?",
+    helper: "Interest and other income usually need bank statements or Form 26AS/AIS review.",
+    options: ["Yes", "No", "Not sure"],
+  },
+  {
+    id: "documentsReady",
+    question: "Which documents do you already have ready?",
+    helper: "Upload Form 16, bank statement, GST invoices, investment proofs, rent receipts, loan certificates, and expense bills.",
+    options: ["Most documents", "Some documents", "Almost none"],
+  },
+];
+
+function taxGuidePayload(session, documents = [], expenses = []) {
+  const answeredIds = new Set(session.answers.map((answer) => answer.questionId));
+  const nextQuestion = taxQuestions.find((question) => !answeredIds.has(question.id)) || null;
+  const totalExpense = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const gstExpense = expenses.reduce((sum, expense) => sum + Number(expense.gstAmount || 0), 0);
+  const uploadedCategories = new Set(documents.map((document) => document.category));
+  const missingDocuments = [];
+
+  if (answeredIds.has("incomeSources") && !uploadedCategories.has("Form 16")) {
+    missingDocuments.push("Form 16 or income statement");
+  }
+  if (answeredIds.has("gstRegistered") && !uploadedCategories.has("GST invoice")) {
+    missingDocuments.push("GST sales/purchase invoices");
+  }
+  if (answeredIds.has("investmentProofs") && !uploadedCategories.has("Investment proof")) {
+    missingDocuments.push("Investment proof");
+  }
+  if (answeredIds.has("housing") && !uploadedCategories.has("Rent / home loan")) {
+    missingDocuments.push("Rent receipts or home loan certificate");
+  }
+
+  const guidance = nextQuestion
+    ? "Answer the next question and upload any matching document. I will keep narrowing the filing checklist."
+    : "Question flow complete. Review the missing documents and expenses before filing.";
+
+  return {
+    answers: session.answers,
+    nextQuestion,
+    progress: Math.round((session.answers.length / taxQuestions.length) * 100),
+    summary: {
+      documentsUploaded: documents.length,
+      expensesTracked: expenses.length,
+      totalExpense,
+      gstExpense,
+      missingDocuments: [...new Set(missingDocuments)].slice(0, 5),
+    },
+    guidance,
+  };
 }
 
 app.post("/api/auth/login", async (req, res, next) => {
@@ -268,6 +384,168 @@ app.put("/api/portfolio/:userId", async (req, res, next) => {
     );
 
     res.json(portfolio);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/documents/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const documents = await TaxDocument.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    res.json(documents);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/documents/:userId", upload.single("document"), async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    if (!req.file) return res.status(400).json({ error: "Document file is required" });
+
+    const document = await TaxDocument.create({
+      userId: req.params.userId,
+      originalName: req.file.originalname,
+      storedName: req.file.filename,
+      filePath: req.file.path,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      category: req.body.category || "Other",
+      documentDate: req.body.documentDate || "",
+      amount: Math.max(0, Number(req.body.amount) || 0),
+      notes: req.body.notes || "",
+    });
+
+    res.status(201).json(document);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/documents/:userId/:documentId/download", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const document = await TaxDocument.findOne({
+      _id: req.params.documentId,
+      userId: req.params.userId,
+    });
+    if (!document) return res.status(404).json({ error: "Document not found" });
+    res.download(document.filePath, document.originalName);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/documents/:userId/:documentId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const document = await TaxDocument.findOneAndDelete({
+      _id: req.params.documentId,
+      userId: req.params.userId,
+    });
+    if (document?.filePath && fs.existsSync(document.filePath)) {
+      fs.unlinkSync(document.filePath);
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/expenses/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const expenses = await Expense.find({ userId: req.params.userId }).sort({ date: -1, createdAt: -1 });
+    res.json(expenses);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/expenses/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const expense = await Expense.create({
+      userId: req.params.userId,
+      date: req.body.date || "",
+      vendor: String(req.body.vendor || "Unknown vendor"),
+      category: String(req.body.category || "General"),
+      amount: Math.max(0, Number(req.body.amount) || 0),
+      gstAmount: Math.max(0, Number(req.body.gstAmount) || 0),
+      paymentMode: String(req.body.paymentMode || "Bank"),
+      hasInvoice: Boolean(req.body.hasInvoice),
+      taxTreatment: req.body.taxTreatment || "Business expense",
+      notes: String(req.body.notes || ""),
+    });
+    res.status(201).json(expense);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/expenses/:userId/:expenseId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    await Expense.deleteOne({ _id: req.params.expenseId, userId: req.params.userId });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/tax-guide/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const [session, documents, expenses] = await Promise.all([
+      TaxGuideSession.findOneAndUpdate(
+        { userId: req.params.userId },
+        { $setOnInsert: { userId: req.params.userId, answers: [] } },
+        { new: true, upsert: true },
+      ),
+      TaxDocument.find({ userId: req.params.userId }),
+      Expense.find({ userId: req.params.userId }),
+    ]);
+    res.json(taxGuidePayload(session, documents, expenses));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/tax-guide/:userId/answer", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    const question = taxQuestions.find((item) => item.id === req.body.questionId);
+    if (!question) return res.status(400).json({ error: "Unknown question" });
+
+    const session = await TaxGuideSession.findOneAndUpdate(
+      { userId: req.params.userId },
+      { $setOnInsert: { userId: req.params.userId, answers: [] } },
+      { new: true, upsert: true },
+    );
+    session.answers = session.answers.filter((answer) => answer.questionId !== question.id);
+    session.answers.push({
+      questionId: question.id,
+      question: question.question,
+      answer: String(req.body.answer || ""),
+    });
+    await session.save();
+
+    const [documents, expenses] = await Promise.all([
+      TaxDocument.find({ userId: req.params.userId }),
+      Expense.find({ userId: req.params.userId }),
+    ]);
+    res.json(taxGuidePayload(session, documents, expenses));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/tax-guide/:userId", async (req, res, next) => {
+  try {
+    if (!ensureOwnUser(req, res)) return;
+    await TaxGuideSession.deleteOne({ userId: req.params.userId });
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
