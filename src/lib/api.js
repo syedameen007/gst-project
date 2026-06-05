@@ -74,6 +74,17 @@ export function loginUser(credentials) {
   });
 }
 
+export function signupUser(credentials) {
+  return request("/api/auth/signup", {
+    method: "POST",
+    body: JSON.stringify(credentials),
+  });
+}
+
+export function googleLoginUrl() {
+  return `${API_URL}/api/auth/google/start`;
+}
+
 export function updateUser(userId, updates) {
   return request(`/api/user/${userId}`, {
     method: "PUT",

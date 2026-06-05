@@ -7,6 +7,8 @@ React + JavaScript full-stack finance project for tax-aware investments, GST ITC
 - Separate React pages for all five requested features.
 - Proper home hub at `/` with access to every feature.
 - Customer login page at `/login`.
+- Sign-up / create account page at `/signup`.
+- Google OAuth login scaffold with backend callback at `/api/auth/google/callback`.
 - User information and settings page at `/settings`.
 - Portfolio creator at `/portfolio-creator` with editable assets, tax buckets, risk mix, and MongoDB save/load.
 - Tax filing helper at `/tax-filing-helper` for document uploads, expense writing, and guided beginner tax questions.
@@ -30,6 +32,24 @@ npm run dev
 
 Frontend: http://127.0.0.1:5173  
 API: http://127.0.0.1:4000/api/health
+
+## Google Login
+
+Create a Google OAuth web client in Google Cloud Console and add this redirect URI:
+
+```text
+http://127.0.0.1:4000/api/auth/google/callback
+```
+
+Then set these in `.env`:
+
+```bash
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_CALLBACK_URL=http://127.0.0.1:4000/api/auth/google/callback
+```
+
+The Login and Sign Up pages both include a Google button. Password signup works without Google credentials.
 
 ## Kaggle Training
 

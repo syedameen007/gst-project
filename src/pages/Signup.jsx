@@ -1,20 +1,19 @@
-import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowRight, UserPlus, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { googleLoginUrl } from "../lib/api";
 import { useFinance } from "../lib/financeContext";
 
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const { signIn } = useFinance();
+  const { signUp } = useFinance();
   const [form, setForm] = useState({
-    email: "demo@fiscallens.app",
-    password: "demo12345",
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
   });
-  const [error, setError] = useState(
-    params.get("error") ? "Google login could not be completed. Check OAuth credentials." : "",
-  );
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   function updateField(name, value) {
@@ -24,12 +23,22 @@ export default function Login() {
   async function submit(event) {
     event.preventDefault();
     setError("");
+
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
     setLoading(true);
     try {
-      await signIn(form);
+      await signUp({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+      });
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError(err.message || "Could not create account");
     } finally {
       setLoading(false);
     }
@@ -37,41 +46,49 @@ export default function Login() {
 
   return (
     <main className="login-page">
-      <section className="login-hero">
+      <section className="login-hero signup-hero">
         <div className="brand login-brand">
           <div className="brand-icon">
             <ShieldCheck size={22} />
           </div>
           <div>
             <span>Fiscal Lens</span>
-            <small>Compliance + savings</small>
+            <small>Secure tax workspace</small>
           </div>
         </div>
-        <h1>Tax-aware finance workspace</h1>
+        <h1>Create your GST tax account</h1>
         <p>
-          Sign in or create an account to access your dashboard, portfolio creator,
-          smart tax planning engine, simulator, and AI support chat.
+          Save documents, expenses, tax answers, portfolio scenarios, and AI advisor
+          conversations under one protected customer profile.
         </p>
         <div className="login-stat-grid">
           <article>
-            <strong>MongoDB</strong>
-            <span>Profile, portfolio, scenarios, and chat history</span>
+            <strong>Document Vault</strong>
+            <span>Upload filing proofs and keep metadata in MongoDB</span>
           </article>
           <article>
-            <strong>ML Model</strong>
-            <span>Portfolio return forecast with tax-aware context</span>
+            <strong>Guided Filing</strong>
+            <span>Beginner-friendly questions for tax preparation</span>
           </article>
         </div>
       </section>
 
       <form className="login-card" onSubmit={submit}>
         <div className="login-lock">
-          <LockKeyhole size={22} />
+          <UserPlus size={22} />
         </div>
         <div>
-          <span className="eyebrow">Customer Login</span>
-          <h2>Welcome back</h2>
+          <span className="eyebrow">Create Account</span>
+          <h2>Start securely</h2>
         </div>
+        <label>
+          Full name
+          <input
+            value={form.name}
+            onChange={(event) => updateField("name", event.target.value)}
+            required
+          />
+        </label>
         <label>
           Email
           <input
@@ -87,12 +104,23 @@ export default function Login() {
             type="password"
             value={form.password}
             onChange={(event) => updateField("password", event.target.value)}
+            minLength={6}
+            required
+          />
+        </label>
+        <label>
+          Confirm password
+          <input
+            type="password"
+            value={form.confirmPassword}
+            onChange={(event) => updateField("confirmPassword", event.target.value)}
+            minLength={6}
             required
           />
         </label>
         {error && <p className="form-error">{error}</p>}
         <button className="primary-action login-submit" type="submit" disabled={loading}>
-          {loading ? "Signing in" : "Enter dashboard"}
+          {loading ? "Creating account" : "Create account"}
           <ArrowRight size={18} />
         </button>
         <button
@@ -103,10 +131,10 @@ export default function Login() {
           }}
         >
           <span>G</span>
-          Continue with Google
+          Sign up with Google
         </button>
         <p className="auth-switch">
-          New here? <Link to="/signup">Create an account</Link>
+          Already have an account? <Link to="/login">Login</Link>
         </p>
       </form>
     </main>

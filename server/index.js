@@ -67,6 +67,27 @@ function hashPassword(password) {
   return crypto.createHash("sha256").update(String(password)).digest("hex");
 }
 
+function publicUser(user) {
+  return {
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    authProvider: user.authProvider,
+  };
+}
+
+async function issueSession(user) {
+  user.sessionToken = crypto.randomBytes(32).toString("hex");
+  await user.save();
+  await FinancialProfile.findOneAndUpdate(
+    { userId: user.id },
+    { $setOnInsert: { userId: user.id, inputs: DEFAULT_INPUTS, regime: "old" } },
+    { upsert: true },
+  );
+  return { user: publicUser(user), token: user.sessionToken };
+}
+
 async function requireAuth(req, res, next) {
   try {
     const header = req.headers.authorization || "";
@@ -208,34 +229,146 @@ function taxGuidePayload(session, documents = [], expenses = []) {
 app.post("/api/auth/login", async (req, res, next) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
-    const name = String(req.body.name || "Fiscal Lens User").trim();
-    const password = String(req.body.password || "demo-password");
+    const password = String(req.body.password || "");
 
     if (!email || !email.includes("@")) {
       return res.status(400).json({ error: "Valid email is required" });
     }
+    if (!password) {
+      return res.status(400).json({ error: "Password is required" });
+    }
 
     const passwordHash = hashPassword(password);
-    let user = await User.findOne({ email });
+    const user = await User.findOne({ email });
     if (!user) {
-      user = await User.create({ email, name, passwordHash });
-    } else {
-      user.name = name;
-      await user.save();
+      return res.status(404).json({ error: "Account not found. Please create an account first." });
     }
-    user.sessionToken = crypto.randomBytes(32).toString("hex");
-    await user.save();
+    if (!user.passwordHash || user.passwordHash !== passwordHash) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
 
-    await FinancialProfile.findOneAndUpdate(
-      { userId: user.id },
-      { $setOnInsert: { userId: user.id, inputs: DEFAULT_INPUTS, regime: "old" } },
-      { upsert: true },
-    );
+    res.json(await issueSession(user));
+  } catch (error) {
+    next(error);
+  }
+});
 
-    res.json({
-      user: { userId: user.id, name: user.name, email: user.email, role: user.role },
-      token: user.sessionToken,
+app.post("/api/auth/signup", async (req, res, next) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+
+    if (!name || !email.includes("@") || password.length < 6) {
+      return res.status(400).json({ error: "Name, valid email, and 6+ character password are required" });
+    }
+
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(409).json({ error: "Account already exists. Please login instead." });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      passwordHash: hashPassword(password),
+      authProvider: "password",
     });
+
+    res.status(201).json(await issueSession(user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/auth/google/start", (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const callbackUrl =
+    process.env.GOOGLE_CALLBACK_URL || `http://127.0.0.1:${port}/api/auth/google/callback`;
+
+  if (!clientId) {
+    return res.status(500).send("GOOGLE_CLIENT_ID is missing in .env");
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: callbackUrl,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline",
+    prompt: "select_account",
+    state,
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+app.get("/api/auth/google/callback", async (req, res, next) => {
+  try {
+    const code = String(req.query.code || "");
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const callbackUrl =
+      process.env.GOOGLE_CALLBACK_URL || `http://127.0.0.1:${port}/api/auth/google/callback`;
+    const clientOrigin = process.env.CLIENT_ORIGIN || "http://127.0.0.1:5173";
+
+    if (!code || !clientId || !clientSecret) {
+      return res.redirect(`${clientOrigin}/login?error=google_config`);
+    }
+
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: callbackUrl,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      return res.redirect(`${clientOrigin}/login?error=google_token`);
+    }
+
+    const tokenData = await tokenResponse.json();
+    const profileResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    if (!profileResponse.ok) {
+      return res.redirect(`${clientOrigin}/login?error=google_profile`);
+    }
+
+    const profile = await profileResponse.json();
+    const email = String(profile.email || "").toLowerCase();
+    if (!email) return res.redirect(`${clientOrigin}/login?error=google_email`);
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      {
+        $set: {
+          name: profile.name || email.split("@")[0],
+          email,
+          googleId: profile.sub,
+          authProvider: "google",
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    const session = await issueSession(user);
+    const params = new URLSearchParams({
+      token: session.token,
+      userId: session.user.userId,
+      name: session.user.name,
+      email: session.user.email,
+      role: session.user.role,
+      authProvider: session.user.authProvider,
+    });
+
+    res.redirect(`${clientOrigin}/auth/callback?${params.toString()}`);
   } catch (error) {
     next(error);
   }

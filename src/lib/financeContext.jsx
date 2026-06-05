@@ -6,6 +6,7 @@ import {
   getUserId,
   loginUser,
   saveProfile,
+  signupUser,
   storeUser,
   updateUser,
 } from "./api";
@@ -36,6 +37,12 @@ export function FinanceProvider({ children }) {
   useEffect(() => {
     let active = true;
     hydrated.current = false;
+    if (!authUser) {
+      hydrated.current = true;
+      return () => {
+        active = false;
+      };
+    }
     fetchProfile(userId)
       .then((profile) => {
         if (!active) return;
@@ -52,11 +59,11 @@ export function FinanceProvider({ children }) {
     return () => {
       active = false;
     };
-  }, [userId]);
+  }, [authUser, userId]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(inputs));
-    if (!hydrated.current) return;
+    if (!hydrated.current || !authUser) return;
 
     const timeout = window.setTimeout(() => {
       setSyncStatus("saving");
@@ -69,7 +76,7 @@ export function FinanceProvider({ children }) {
     }, 450);
 
     return () => window.clearTimeout(timeout);
-  }, [inputs, regime, userId]);
+  }, [authUser, inputs, regime, userId]);
 
   function updateInput(name, value) {
     setInputs((current) => ({
@@ -86,6 +93,20 @@ export function FinanceProvider({ children }) {
     setAuthUser(response.user);
     setUserId(response.user.userId);
     return response.user;
+  }
+
+  async function signUp(credentials) {
+    const response = await signupUser(credentials);
+    storeUser(response.user, response.token);
+    setAuthUser(response.user);
+    setUserId(response.user.userId);
+    return response.user;
+  }
+
+  function completeAuth(user, token) {
+    storeUser(user, token);
+    setAuthUser(user);
+    setUserId(user.userId);
   }
 
   function signOut() {
@@ -113,6 +134,8 @@ export function FinanceProvider({ children }) {
         setRegime,
         updateInput,
         signIn,
+        signUp,
+        completeAuth,
         signOut,
         saveUserSettings,
       }}
