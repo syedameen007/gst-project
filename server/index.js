@@ -32,15 +32,21 @@ if (!isVercel) {
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
-const mongoUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/fiscal_lens";
+const mongoUri =
+  process.env.MONGODB_URI || (isVercel ? "" : "mongodb://127.0.0.1:27017/fiscal_lens");
 let mongoConnectionPromise = null;
 
 export async function connectDatabase() {
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI is required in production");
+  }
   if (mongoose.connection.readyState === 1) return mongoose.connection;
-  mongoConnectionPromise ||= mongoose.connect(mongoUri).catch((error) => {
-    mongoConnectionPromise = null;
-    throw error;
-  });
+  mongoConnectionPromise ||= mongoose
+    .connect(mongoUri, { serverSelectionTimeoutMS: 8000 })
+    .catch((error) => {
+      mongoConnectionPromise = null;
+      throw error;
+    });
   await mongoConnectionPromise;
   return mongoose.connection;
 }
