@@ -24,33 +24,61 @@ import { predictFinancialOutcome, predictStockOutcome } from "./ml/predictor.js"
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isVercel = process.env.VERCEL === "1";
 const uploadRoot = path.join(__dirname, "..", "uploads");
-fs.mkdirSync(uploadRoot, { recursive: true });
+if (!isVercel) {
+  fs.mkdirSync(uploadRoot, { recursive: true });
+}
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const mongoUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/fiscal_lens";
+let mongoConnectionPromise = null;
+
+export async function connectDatabase() {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  mongoConnectionPromise ||= mongoose.connect(mongoUri).catch((error) => {
+    mongoConnectionPromise = null;
+    throw error;
+  });
+  await mongoConnectionPromise;
+  return mongoose.connection;
+}
+
 const upload = multer({
-  storage: multer.diskStorage({
-    destination(req, _file, cb) {
-      const userFolder = path.join(uploadRoot, String(req.params.userId || "unknown"));
-      fs.mkdirSync(userFolder, { recursive: true });
-      cb(null, userFolder);
-    },
-    filename(_req, file, cb) {
-      const safeName = file.originalname.replace(/[^\w.\-]+/g, "_");
-      cb(null, `${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${safeName}`);
-    },
-  }),
+  storage: isVercel
+    ? multer.memoryStorage()
+    : multer.diskStorage({
+        destination(req, _file, cb) {
+          const userFolder = path.join(uploadRoot, String(req.params.userId || "unknown"));
+          fs.mkdirSync(userFolder, { recursive: true });
+          cb(null, userFolder);
+        },
+        filename(_req, file, cb) {
+          const safeName = file.originalname.replace(/[^\w.\-]+/g, "_");
+          cb(null, `${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${safeName}`);
+        },
+      }),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || ["http://127.0.0.1:5173", "http://localhost:5173"],
+    origin: process.env.CLIENT_ORIGIN
+      ? process.env.CLIENT_ORIGIN.split(",").map((origin) => origin.trim())
+      : ["http://127.0.0.1:5173", "http://localhost:5173"],
   }),
 );
 app.use(express.json({ limit: "1mb" }));
+
+app.use(async (_req, _res, next) => {
+  try {
+    await connectDatabase();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 function payloadFor(profile) {
   const inputs = { ...DEFAULT_INPUTS, ...(profile?.inputs?.toObject?.() || profile?.inputs || {}) };
@@ -557,7 +585,9 @@ app.put("/api/portfolio/:userId", async (req, res, next) => {
 app.get("/api/documents/:userId", async (req, res, next) => {
   try {
     if (!ensureOwnUser(req, res)) return;
-    const documents = await TaxDocument.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    const documents = await TaxDocument.find({ userId: req.params.userId })
+      .select("-data")
+      .sort({ createdAt: -1 });
     res.json(documents);
   } catch (error) {
     next(error);
@@ -569,20 +599,27 @@ app.post("/api/documents/:userId", upload.single("document"), async (req, res, n
     if (!ensureOwnUser(req, res)) return;
     if (!req.file) return res.status(400).json({ error: "Document file is required" });
 
+    const storedName =
+      req.file.filename ||
+      `${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${req.file.originalname.replace(/[^\w.\-]+/g, "_")}`;
     const document = await TaxDocument.create({
       userId: req.params.userId,
       originalName: req.file.originalname,
-      storedName: req.file.filename,
-      filePath: req.file.path,
+      storedName,
+      filePath: req.file.path || "",
       mimeType: req.file.mimetype,
       size: req.file.size,
       category: req.body.category || "Other",
       documentDate: req.body.documentDate || "",
       amount: Math.max(0, Number(req.body.amount) || 0),
       notes: req.body.notes || "",
+      storage: req.file.buffer ? "mongo" : "filesystem",
+      data: req.file.buffer,
     });
 
-    res.status(201).json(document);
+    const response = document.toObject();
+    delete response.data;
+    res.status(201).json(response);
   } catch (error) {
     next(error);
   }
@@ -596,6 +633,14 @@ app.get("/api/documents/:userId/:documentId/download", async (req, res, next) =>
       userId: req.params.userId,
     });
     if (!document) return res.status(404).json({ error: "Document not found" });
+    if (document.storage === "mongo" && document.data) {
+      res.setHeader("Content-Type", document.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${document.originalName}"`);
+      return res.send(document.data);
+    }
+    if (!document.filePath || !fs.existsSync(document.filePath)) {
+      return res.status(404).json({ error: "Document file not found" });
+    }
     res.download(document.filePath, document.originalName);
   } catch (error) {
     next(error);
@@ -866,14 +911,17 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ error: error.message || "Server error" });
 });
 
-mongoose
-  .connect(mongoUri)
-  .then(() => {
-    app.listen(port, "127.0.0.1", () => {
-      console.log(`Fiscal Lens API running at http://127.0.0.1:${port}`);
+if (!isVercel) {
+  connectDatabase()
+    .then(() => {
+      app.listen(port, "127.0.0.1", () => {
+        console.log(`Fiscal Lens API running at http://127.0.0.1:${port}`);
+      });
+    })
+    .catch((error) => {
+      console.error("MongoDB connection failed", error);
+      process.exitCode = 1;
     });
-  })
-  .catch((error) => {
-    console.error("MongoDB connection failed", error);
-    process.exitCode = 1;
-  });
+}
+
+export default app;

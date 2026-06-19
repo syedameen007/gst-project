@@ -52,6 +52,34 @@ GOOGLE_CALLBACK_URL=http://127.0.0.1:4000/api/auth/google/callback
 
 The Login and Sign Up pages both include a Google button. Password signup works without Google credentials.
 
+## Deploy on Vercel + MongoDB Atlas Free
+
+Use a free MongoDB Atlas M0/shared cluster for production data. In Atlas:
+
+1. Create a free cluster.
+2. Create a database user.
+3. Allow network access from Vercel. For a student/demo deployment, Atlas can use `0.0.0.0/0`; for production, restrict access more carefully.
+4. Copy the Node.js connection string and replace the password/database name.
+
+Set these Vercel environment variables:
+
+```bash
+MONGODB_URI=mongodb+srv://...
+CLIENT_ORIGIN=https://your-vercel-app.vercel.app
+VITE_API_URL=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=https://your-vercel-app.vercel.app/api/auth/google/callback
+```
+
+Then deploy:
+
+```bash
+npx vercel --prod
+```
+
+The Vercel config builds the Vite app to `dist`, routes `/api/*` to the Express API, and sends React routes back to `index.html`.
+
 ## Kaggle Training
 
 Kaggle dataset pages require a Kaggle account/API token to download files programmatically. Download any NIFTY 50 OHLCV CSV from Kaggle, then train with:
